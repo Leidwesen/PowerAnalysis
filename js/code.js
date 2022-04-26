@@ -5,7 +5,6 @@ const {
     ChiSquared,
     Multinomial,
     rng: { MersenneTwister },
-    rng: { normal: { Inversion } },
     R: { map, sum, div, mult, multiplex, numberPrecision, seq: _seq }
 } = libR;
 
@@ -21,6 +20,11 @@ const addrow = function(arr, x) { return map(arr)((e)=>add(e,x)); }
 const divrow = function(arr, x) { return map(arr)((e)=>div(e,x)); }
 // multiplex doesn't handle arr / arr operations nicely
 const powrow = multiplex(pow);
+
+const sigfigs = 4;
+function ff(f) { // Format Float to at most fixed significance
+    return parseFloat(f.toFixed(sigfigs));
+}
 
 var verbose, confidence, Ntests, precision, N, p, ptest, dim, chisq_sig;
 
@@ -106,7 +110,7 @@ function sampleForConfidence() {
 	accuracy = accuracyFromSample(N);
     }
     if (swapsAtOne <= 2) {
-	addStr(`Number of Tests: ${Ntests}\nTo differentiate between p [${p}] and ptest [${ptest}] with ${100*confidence}% confidence, use at least\nSample Size: ${N} (accuracy = ${accuracy})`);
+	addStr(`Number of Tests: ${Ntests}\nTo differentiate between pnull [${arr2str(p)}] and ptest [${arr2str(ptest)}] with ${100*confidence}% confidence, use at least\nSample Size: ${N} (accuracy = ${accuracy})`);
     }
     return N;
 }
@@ -136,7 +140,7 @@ function parseArray(arrstr) {
     // starts with [ ends with ]
     // contains chars separated by , last digit is not ,
     if (!regex.test(arrstr)) {
-	return [false, "ERROR: Incorrect array format, must be [p1,p2,...,pN"];
+	return [false, "ERROR: Incorrect array format, must be [p1,p2,...,pN]"];
     }
     let strarr = arrstr.substr(1,arrstr.length-2).split(',');
     let numarr = [];
@@ -144,14 +148,23 @@ function parseArray(arrstr) {
 	let numnum = parseVal(strnum);
 	if (!isValid(strnum, numnum)) {
 	    return [false, `ERROR: ${strnum} is not a number (in ${arrstr})`];
+	} else if (numnum < 0) {
+	    return [false, `ERROR: ${ff(strnum)} is less than 0 (in ${arrstr})`];
 	}
 	numarr.push(numnum)
     }
     let totalp = sum(numarr);
-    if (totalp != 1) {
-	return [false, `ERROR: total probability should be 1, not ${totalp}`];
+    if (totalp <= 0) {
+	return [false, `ERROR: Array sum should be >0, not ${ff(totalp)}`];
+    } else if (totalp != 1) {
+	numarr = divrow(numarr, totalp);
+	addStr(`NOTE: Array sum is ${ff(totalp)}, normalizing to [${arr2str(numarr)}]`);
     }
     return [true, numarr]
+}
+
+function arr2str(arr) {
+    return arr.map((e)=>ff(e));
 }
 
 function clearOutput() {
@@ -173,12 +186,12 @@ function updateNumberInput(e) {
 	if (num < min) {
 	    e.srcElement.value = min;
 	    e.srcElement.dispatchEvent(new Event('change'))
-	    addStr(`ERROR: '${val}' < minimum ${min} for ${id}`);
+	    addStr(`ERROR: '${ff(val)}' < minimum ${min} for ${id}`);
 	    return false;
 	} else if (num > max) {
 	    e.srcElement.value = max;
 	    e.srcElement.dispatchEvent(new Event('change'))
-	    addStr(`ERROR: '${val}' > maximum ${max} for ${id}`);
+	    addStr(`ERROR: '${ff(val)}' > maximum ${max} for ${id}`);
 	    return false;
 	}
     }
@@ -195,10 +208,17 @@ window.addEventListener('load', function() {
     updateConfidenceText();
     for (let node of $Sall('input[type=number]')) {
 	node.addEventListener('change', (e)=>{
-	    if (updateNumberInput(e)) {
-		let id = e.srcElement.id
+	    let id = e.srcElement.id
+	    if (updateNumberInput(e, id)) {
 		if (id=='confidence'||id=='precision') {
 		    updateConfidenceText();
+		} else if (id=='Nsamples'||id=='Ntests') {
+		    let val = Number(e.srcElement.value);
+		    if (!Number.isInteger(val)) {
+			e.srcElement.value = Math.floor(val);
+			e.srcElement.dispatchEvent(new Event('change'));
+			addStr(`WARNING: ${ff(val)} must be an integer for ${id}`);
+		    }
 		}
 	    }
 	});
@@ -214,7 +234,7 @@ window.addEventListener('load', function() {
 		e.srcElement.value = 1;
 		e.srcElement.dispatchEvent(new Event('change'));
 	    } else if (pval<0 || pval>1) {
-		addStr(`ERROR: ${elID} '${pval}' must be within [0,1]`);
+		addStr(`ERROR: ${elID} '${ff(pval)}' must be within [0,1]`);
 		e.srcElement.value = pval<0 ? 0 : 1
 		e.srcElement.dispatchEvent(new Event('change'));
 	    } else {
@@ -262,7 +282,7 @@ window.addEventListener('load', function() {
 		clearOutput();
 		let id = e.srcElement.id;
 		if (verbose || 'accFromN') {
-		    addStr(`chisq significance threshold = ${chisq_sig} with df=${dim-1} and ${100*confidence}% confidence`);
+		    addStr(`chisq significance threshold = ${ff(chisq_sig)} with df=${dim-1} and ${100*confidence}% confidence`);
 		}
 		if (id=='accFromN') {
 		    accuracyFromSample(N,true);
